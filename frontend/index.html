@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div id="top-bar">
+        <div class="brand">Task <span>Tracker</span></div>
+        <div id="user-info" style="display:none;">
+            <span id="user-email"></span>
+            <button id="logout-btn">Выйти</button>
+        </div>
+    </div>
+
+    <!-- ---------- Экран входа/регистрации ---------- -->
+    <div id="auth-screen">
+        <h2>Добро пожаловать</h2>
+        <p class="sub">Войдите или создайте аккаунт, чтобы продолжить</p>
+
+        <div class="tabs">
+            <button id="tab-login" class="active">Войти</button>
+            <button id="tab-register">Регистрация</button>
+        </div>
+
+        <div id="error-banner"></div>
+
+        <form id="login-form" class="auth-form active">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" required>
+            <label for="login-password">Пароль</label>
+            <input type="password" id="login-password" required>
+            <button type="submit" class="primary">Войти</button>
+        </form>
+
+        <form id="register-form" class="auth-form">
+            <label for="register-username">Имя пользователя</label>
+            <input type="text" id="register-username" required>
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" required>
+            <label for="register-password">Пароль</label>
+            <input type="password" id="register-password" required minlength="6">
+            <button type="submit" class="primary">Создать аккаунт</button>
+        </form>
+    </div>
+
+    <!-- ---------- Основной экран ---------- -->
+    <div id="app-screen">
+        <div id="app-body">
+            <div id="sidebar">
+                <h3>Проекты</h3>
+                <div id="project-list"></div>
+
+                <form id="new-project-form">
+                    <label for="new-project-name">Новый проект</label>
+                    <input type="text" id="new-project-name" placeholder="Название" required maxlength="25">
+                    <input type="text" id="new-project-description" placeholder="Описание" style="margin-top:6px;"
+                        required maxlength="250">
+                    <button type="submit" class="primary">Создать проект</button>
+                </form>
+            </div>
+
+            <div id="main-panel">
+                <div id="app-error-banner" style="display:none;" class="task-card"></div>
+                <div id="project-content"></div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
