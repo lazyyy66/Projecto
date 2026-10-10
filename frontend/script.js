@@ -10,6 +10,7 @@ const state = {
     selectedProjectId: null,
     tasks: [],
     filters: { status: '', priority: '' },
+    tasksRequestId: 0,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -29,7 +30,10 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
     try { data = await response.json(); } catch (e) { /* пустой ответ */ }
 
     if (!response.ok) {
-        const message = (data && data.detail) ? data.detail : `Ошибка ${response.status}`;
+        const detail = data && data.detail;
+        const message = Array.isArray(detail)
+            ? detail.map(error => `${error.loc.slice(1).join('.')}: ${error.msg}`).join('; ')
+            : detail || `Ошибка ${response.status}`;
         throw new Error(message);
     }
     return data;
@@ -76,6 +80,11 @@ async function handleLogout() {
     state.projects = [];
     state.tasks = [];
     state.selectedProjectId = null;
+    state.filters = { status: '', priority: '' };
+    state.tasksRequestId++;
+    renderProjects();
+    renderProjectContent();
+    clearError($('#app-error-banner'));
     showAuthScreen();
 }
 
@@ -132,37 +141,41 @@ async function renameProject(id) {
 
 async function selectProject(id) {
     state.selectedProjectId = id;
+    state.tasks = [];
     renderProjects();
+    renderProjectContent();
     await loadTasks();
 }
 
 // ---------- Таски ----------
 async function loadTasks() {
+    const requestId = ++state.tasksRequestId;
+    const projectId = state.selectedProjectId;
     if (!state.selectedProjectId) { state.tasks = []; renderProjectContent(); return; }
     const params = new URLSearchParams();
     if (state.filters.status) params.set('status', state.filters.status);
     if (state.filters.priority) params.set('priority', state.filters.priority);
     const query = params.toString() ? `?${params}` : '';
-    state.tasks = await api(`/projects/${state.selectedProjectId}/tasks${query}`);
-    renderProjectContent();
+    const tasks = await api(`/projects/${projectId}/tasks${query}`);
+    if (requestId !== state.tasksRequestId || projectId !== state.selectedProjectId) return;
+    state.tasks = tasks;
+    renderTaskList();
 }
 
 async function createTask(payload) {
-    const task = await api(`/projects/${state.selectedProjectId}/tasks`, { method: 'POST', body: payload });
+    await api(`/projects/${state.selectedProjectId}/tasks`, { method: 'POST', body: payload });
     await loadTasks();
 }
 
 async function updateTask(id, patch) {
-    const updated = await api(`/tasks/${id}`, { method: 'PATCH', body: patch });
-    state.tasks = state.tasks.map(t => t.id === id ? updated : t);
-    renderProjectContent();
+    await api(`/tasks/${id}`, { method: 'PATCH', body: patch });
+    await loadTasks();
 }
 
 async function deleteTask(id) {
     if (!confirm('Удалить задачу?')) return;
     await api(`/tasks/${id}`, { method: 'DELETE' });
-    state.tasks = state.tasks.filter(t => t.id !== id);
-    renderProjectContent();
+    await loadTasks();
 }
 
 // ---------- Рендер ----------
@@ -327,7 +340,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 function formatDate(iso) {
-    const d = new Date(iso);
+    const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
     return d.toLocaleDateString('ru-RU');
 }
 

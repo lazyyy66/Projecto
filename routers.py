@@ -1,10 +1,11 @@
 from typing import Literal, Annotated
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 import bcrypt
-from datetime import datetime, timedelta
 import secrets
 from database import SessionDep, User, Project, Task, UserSession
 
@@ -25,7 +26,7 @@ async def get_current_user(
     user_session = await session.scalar(
         select(UserSession).where(UserSession.token == token))
 
-    if not user_session or user_session.expires_at < datetime.utcnow():
+    if not user_session or user_session.expires_at <= datetime.now(timezone.utc):
         raise HTTPException(401, "Невалидный или истёкший токен")
     
     user = await session.get(User, user_session.user_id)
@@ -84,13 +85,20 @@ async def register(data: UserCreate, session: SessionDep):
     if is_exists:
         raise HTTPException(400, "Email занят")
 
+    if await session.scalar(select(User).where(User.username == data.username)):
+        raise HTTPException(400, "Имя пользователя занято")
+
     user = User(
         email=data.email,
         username=data.username,
-        hashed_password=hash_password(data.password),
+        hashed_password=await run_in_threadpool(hash_password, data.password),
     )
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(400, "Email или имя пользователя заняты")
     await session.refresh(user)
     return user
 
@@ -102,14 +110,14 @@ async def register(data: UserCreate, session: SessionDep):
         response_model=TokenRead)
 async def login(data: UserLogin, session: SessionDep):
     user = await session.scalar(select(User).where(User.email == data.email))
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user or not await run_in_threadpool(verify_password, data.password, user.hashed_password):
         raise HTTPException(401, "Неверный Email или пароль")
 
     token = secrets.token_hex(32)
     user_session = UserSession(
         user_id=user.id,
         token=token,
-        expires_at=datetime.utcnow() + SESSION_LIFETIME,)
+        expires_at=datetime.now(timezone.utc) + SESSION_LIFETIME,)
     
     session.add(user_session)
     await session.commit()
@@ -147,7 +155,7 @@ async def create_project(data: ProjectCreate, session: SessionDep, current_user:
 
 @router.get("/projects", tags=["Проекты"], response_model=list[ProjectRead])
 async def get_projects(session: SessionDep, current_user: CurrentUser):
-    projects = await session.scalars(select(Project).where(Project.owner_id == current_user.id))
+    projects = await session.scalars(select(Project).where(Project.owner_id == current_user.id).order_by(Project.id))
     return projects.all()
 
 
@@ -190,7 +198,7 @@ async def get_tasks(
     session: SessionDep,
     status: Literal["done", "not done", "in process"] | None = None,
     priority: Literal["low", "medium", "high"] | None = None,):
-    query = select(Task).where(Task.project_id == project.id)
+    query = select(Task).where(Task.project_id == project.id).order_by(Task.id)
     if status is not None:
         query = query.where(Task.status == status)
     if priority is not None:

@@ -1,13 +1,33 @@
-from typing import Literal, Annotated
-from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from typing import Literal
+from datetime import datetime, timezone
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
+
+
+class PasswordInput(BaseModel):
+    password: str = Field(min_length=1)
+
+    @field_validator('password')
+    @classmethod
+    def validate_password_length(cls, value: str) -> str:
+        if len(value.encode('utf-8')) > 72:
+            raise ValueError('Пароль должен занимать не более 72 байт UTF-8')
+        return value
+
+
+class PartialUpdate(BaseModel):
+    @field_validator('*')
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError('Поле не может быть null')
+        return value
 
 
 # ---------------АВТОРИЗАЦИЯ---------------
-class UserCreate(BaseModel):
+class UserCreate(PasswordInput):
     email: EmailStr
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=30, pattern=r'\S')
+    password: str = Field(min_length=6)
 
 class UserRead(BaseModel):
     id: int
@@ -17,9 +37,8 @@ class UserRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-class UserLogin(BaseModel):
+class UserLogin(PasswordInput):
     email: EmailStr
-    password: str
 
 class TokenRead(BaseModel):
     access_token: str
@@ -29,7 +48,7 @@ class TokenRead(BaseModel):
 
 # ---------------ПРОЕКТЫ---------------
 class ProjectCreate(BaseModel):
-    name: str = Field(max_length=25)
+    name: str = Field(min_length=1, max_length=25, pattern=r'\S')
     description: str = Field(max_length=250)
 
     
@@ -43,19 +62,27 @@ class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProjectUpdate(BaseModel):
-    name: str | None = Field(default=None, max_length=25)
+class ProjectUpdate(PartialUpdate):
+    name: str | None = Field(default=None, min_length=1, max_length=25, pattern=r'\S')
     description: str | None = Field(default=None, max_length=250)
 
 
 
 # ---------------ТАСКИ---------------
 class TaskCreate(BaseModel):
-    title: str = Field(max_length=100)
+    title: str = Field(min_length=1, max_length=100, pattern=r'\S')
     description: str = Field(max_length=400)
     due_date: datetime
     status: Literal["done", "not done", "in process"] = "not done"
     priority: Literal["low", "medium", "high"] = "medium"
+
+    @field_validator('due_date')
+    @classmethod
+    def normalize_due_date(cls, value: datetime) -> datetime:
+        # Даты без часового пояса считаем UTC, включая ввод из фронтенда.
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class TaskRead(BaseModel):
@@ -72,6 +99,6 @@ class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(PartialUpdate):
     status: Literal["done", "not done", "in process"] | None = None
     priority: Literal["low", "medium", "high"] | None = None
